@@ -1,6 +1,6 @@
 name = "RL"
 uuid = "c5f37494-6764-4c5d-bca1-8f7047e2e011"
-authors = ["abhinav.bhatia.me@gmail.com]
+authors = ["abhinav.bhatia.me@gmail.com"]
 version = "1.0.0"
 
 [deps]
