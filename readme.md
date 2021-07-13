@@ -10,7 +10,7 @@ Popular RL algorithms included in this package:
 
 1. Set up the python environment. To ensure that PyCall uses the desired python environment, activate the python environment, type `ENV["PYTHON"]="python"` in Julia REPL, and install PyCall using `Pkg.add("PyCall")`. In case PyCall was already installed, build it again using `Pkg.build("PyCall")`, since PyCall uses the python environment that was used to build it. After these steps, PyCall will continue to use this python environment, even if it is not activated.
 2. Install `numpy`, `gym` and [`wandb`](https://wandb.ai/site) packages in the python environment.
-3. Finally, to install RL.jl package, use the julia package manager to run `Pkg.add("https://github.com/bhatiaabhinav/RL.jl.git")`.
+3. Finally, to install RL.jl package, use the julia package manager to run `Pkg.add(url="https://github.com/bhatiaabhinav/RL.jl.git")`.
 
 ## Examples
 
