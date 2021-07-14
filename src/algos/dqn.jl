@@ -17,6 +17,7 @@ mutable struct DQNAlgo <: AbstractRLAlgo
     use_mse_loss::Bool
     mb_size::Int
     lr::Float32
+    sgd_steps_per_transition::Int
     grad_clip::Float32
     nsteps::Int
     exp_buff_len::Int
@@ -29,12 +30,12 @@ mutable struct DQNAlgo <: AbstractRLAlgo
     n_actions::Int
     exp_buff::ExperienceBuffer
     device
-    qmodel
-    target_qmodel
+    qmodel::QModel
+    target_qmodel::QModel
     optimizer
     max_ep_steps::Int
-    function DQNAlgo(;double_dqn=false, sarsa_dqn=false, min_explore_steps=10000, epsilon, epsilon_schedule_steps=10000, dqn_mse, mb_size=32, lr=0.0001, grad_clip=Inf32, nsteps, exp_buff_len=1000000, train_interval_steps=1, target_copy_interval_steps=2000, no_gpu, kwargs...)
-        d = new(double_dqn, sarsa_dqn, min_explore_steps, epsilon, epsilon_schedule_steps, dqn_mse, mb_size, lr, grad_clip, nsteps, exp_buff_len, train_interval_steps, target_copy_interval_steps, no_gpu)
+    function DQNAlgo(;double_dqn=false, sarsa_dqn=false, min_explore_steps=10000, epsilon, epsilon_schedule_steps=10000, dqn_mse, mb_size=32, lr=0.0001, sgd_steps_per_transition=1, grad_clip=Inf32, nsteps=1, exp_buff_len=1000000, train_interval_steps=1, target_copy_interval_steps=2000, no_gpu=false, kwargs...)
+        d = new(double_dqn, sarsa_dqn, min_explore_steps, epsilon, epsilon_schedule_steps, dqn_mse, mb_size, lr, sgd_steps_per_transition, grad_clip, nsteps, exp_buff_len, train_interval_steps, target_copy_interval_steps, no_gpu)
     end
 end
 
@@ -127,7 +128,7 @@ function RL.on_env_step!(d::DQNAlgo, r::RLRun)
     push!(d.exp_buff, r.step_obs, r.step_action, r.step_reward, r.step_next_obs, (r.episode_steps < d.max_ep_steps) && r.step_terminal, r.step_info)
 
     if r.total_steps >= d.min_explore_steps && r.total_steps % d.train_interval_steps == 0
-        dqn_train(d, r, 1)
+        dqn_train(d, r, d.sgd_steps_per_transition)
     end
     if r.total_steps % d.target_copy_interval_steps == 0
         copy_net!(d.qmodel, d.target_qmodel)
