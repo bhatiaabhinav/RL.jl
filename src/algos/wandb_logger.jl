@@ -14,7 +14,7 @@ function RL.init!(w::WandbLoggerAlgo, r::RLRun)
 end
 
 function RL.on_env_terminal_step!(w::WandbLoggerAlgo, r::RLRun)
-    w.wandb.log(Dict("Total/Episodes" => r.total_episodes, "Total/Steps" => r.total_steps, "Total/Reward" => r.total_reward, "Total/Time" => r.total_time, "Total/RPE" => r.total_rpe,  "Episode/Steps" => r.episode_steps, "Episode/Reward" => r.episode_reward, "Episode/Discounted_Return" => r.episode_discounted_return, "Episode/Info" => r.episode_info, "Episode/SPS"=> r.episode_steprate), step=r.total_steps)
+    w.wandb.log(Dict("Total/Episodes" => r.total_episodes, "Total/Steps" => r.total_steps, "Total/Reward" => r.total_reward, "Total/Time" => r.total_time, "Total/RPE" => r.total_rpe,  "Episode/Steps" => r.episode_steps, "Episode/Reward" => r.episode_reward, "Episode/Discounted_Return" => r.episode_discounted_return, "Episode/Info" => r.episode_info, "Episode/SPS"=> r.episode_steprate, "Episode/FinalStep" => r.step_info), step=r.total_steps)
     w.wandb.log(r.run_state, step=r.total_steps)
 end
 
