@@ -26,7 +26,7 @@ mutable struct RLRun
     episode_steps::Int
     episode_reward::Float32
     episode_discounted_return::Float32
-    episode_info::Dict{Any,Any}
+    episode_info::Dict{Symbol,Any}
     episode_duration::Float64
     episode_steprate::Float64
 
@@ -35,14 +35,14 @@ mutable struct RLRun
     step_next_obs
     step_reward::Float32
     step_terminal::Bool
-    step_info::Dict{Any,Any}
+    step_info::Dict{Symbol,Any}
 
     run_state::Dict{Symbol,Any} # Anything else not recorded as a field of this object. RL Algos can use it to store/exchange information.
 
     logger::AbstractLogger
 
     function RLRun(name::String, env::AbstractRLEnv, algo::AbstractRLAlgo; max_steps::Integer, max_episodes::Integer, seed::Integer=0, gamma::Real=0.99, logdir::String="logs/$(id(env))/$name", description::String="", kwargs...)
-        rlrun = new(name, env, algo, max_steps, max_episodes, seed, gamma, logdir, description,  0, 0, 0, 0, false, 0, 0, 0, 0, 0, 0, Dict(), 0, 0, nothing, nothing, nothing, 0, true, Dict(), Dict{Symbol,Any}())
+        rlrun = new(name, env, algo, max_steps, max_episodes, seed, gamma, logdir, description,  0, 0, 0, 0, false, 0, 0, 0, 0, 0, 0, Dict{Symbol, Any}(), 0, 0, nothing, nothing, nothing, 0, true, Dict{Symbol, Any}(), Dict{Symbol,Any}())
         mkpath(logdir)
         rlrun.logger = ConsoleLogger(open(joinpath(logdir, "rlrun_logs.txt"), "w+"))
         return rlrun
@@ -111,10 +111,10 @@ function run!(r::RLRun)
                 r.episode_steps = 0
                 r.episode_reward = 0
                 r.episode_discounted_return = 0
-                r.episode_info = Dict()
+                empty!(r.episode_info)
                 r.step_reward = 0
                 r.step_terminal = false
-                r.step_info = Dict()
+                empty!(r.step_info)
                 r.episode_start_time = time()
                 on_env_reset!(algo, r)
             else
@@ -125,8 +125,10 @@ function run!(r::RLRun)
             if isnothing(r.step_action)
                 error("algo returned no action")
             end
-            r.step_next_obs, r.step_reward, r.step_terminal, r.step_info = step!(env, r.step_action)
-            @debug "Stepped" r.step_action r.step_reward r.step_info
+            empty!(r.step_info)
+            r.step_next_obs, r.step_reward, r.step_terminal, step_info = step!(env, r.step_action)
+            for k in keys(step_info); r.step_info[Symbol(k)] = step_info[k]; end
+            @debug "Stepped" r.step_action r.step_reward r.step_info...
             r.step_next_obs = copy(r.step_next_obs)
             r.episode_steps += 1
             r.episode_reward += r.step_reward
