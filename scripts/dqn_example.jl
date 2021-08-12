@@ -18,7 +18,7 @@ env = gym_monitor_wrap(env, "$(config[:logdir])/gym_monitor", force=true, video_
 # make algo:
 algo = CompositeRLAlgo(AbstractRLAlgo[
     DQNAlgo(;config...),
-    PlotterAlgo(save_interval=config[:monitor_interval])
+    PlotterAlgo(save_interval=10, no_display=true)
 ])
 
 
@@ -31,5 +31,5 @@ push!(algo, WandbLoggerAlgo(wandb))
 
 # run algo on env
 Random.seed!(config[:seed])
-rlrun = RLRun(config[:run_name], env, algo, max_steps=config[:max_steps], max_episodes=typemax(Int), seed=config[:seed], gamma=config[:gamma], logdir=config[:logdir], description=config[:run_description])
+rlrun = RLRun(config[:run_name], env, algo, max_steps=config[:max_steps], max_episodes=typemax(Int), seed=config[:seed], gamma=config[:gamma], logdir=config[:logdir], description=config[:run_description], no_console_logs=false, logger_flush_interval=10)
 run!(rlrun)

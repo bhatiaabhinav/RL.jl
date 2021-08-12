@@ -39,10 +39,12 @@ mutable struct RLRun
 
     run_state::Dict{Symbol,Any} # Anything else not recorded as a field of this object. RL Algos can use it to store/exchange information.
 
+    no_console_logs::Bool
+    logger_flush_interval::Int
     logger::AbstractLogger
 
-    function RLRun(name::String, env::AbstractRLEnv, algo::AbstractRLAlgo; max_steps::Integer, max_episodes::Integer, seed::Integer=0, gamma::Real=0.99, logdir::String="logs/$(id(env))/$name", description::String="", kwargs...)
-        rlrun = new(name, env, algo, max_steps, max_episodes, seed, gamma, logdir, description,  0, 0, 0, 0, false, 0, 0, 0, 0, 0, 0, Dict{Symbol, Any}(), 0, 0, nothing, nothing, nothing, 0, true, Dict{Symbol, Any}(), Dict{Symbol,Any}())
+    function RLRun(name::String, env::AbstractRLEnv, algo::AbstractRLAlgo; max_steps::Integer, max_episodes::Integer, seed::Integer=0, gamma::Real=0.99, logdir::String="logs/$(id(env))/$name", description::String="", no_console_logs::Bool = false, logger_flush_interval::Integer = 10, kwargs...)
+        rlrun = new(name, env, algo, max_steps, max_episodes, seed, gamma, logdir, description,  0, 0, 0, 0, false, 0, 0, 0, 0, 0, 0, Dict{Symbol, Any}(), 0, 0, nothing, nothing, nothing, 0, true, Dict{Symbol, Any}(), Dict{Symbol,Any}(), no_console_logs, logger_flush_interval)
         mkpath(logdir)
         rlrun.logger = ConsoleLogger(open(joinpath(logdir, "rlrun_logs.txt"), "w+"))
         return rlrun
@@ -93,16 +95,25 @@ function run!(r::RLRun)
         end
 
         @info full_description(r)
+        !r.no_console_logs && with_logger(ConsoleLogger()) do
+            @info full_description(r)
+        end
+        flush(r.logger.stream)
 
         @info "Initializing algorithm"
         init!(algo, r)
+        flush(r.logger.stream)
 
         @info "Seeding environment" r.seed
         seed!(env, r.seed)
 
         @info "Starting run"
+        with_logger(ConsoleLogger()) do
+            @info "Running..."
+        end
         r.start_time = time()
         on_run_start!(algo, r)
+        flush(r.logger.stream)
         while !should_stop()
             if r.step_terminal
                 @debug "Resetting env"
@@ -146,24 +157,28 @@ function run!(r::RLRun)
                 moving_av_rpe = 0.99 * moving_av_rpe + 0.01 * r.episode_reward
                 on_env_terminal_step!(algo, r)
                 @info "Episode finished" r.total_steps r.total_episodes r.episode_reward r.episode_steps r.total_rpe moving_av_rpe r.step_info... r.run_state...
-                with_logger(ConsoleLogger()) do
+                !r.no_console_logs && with_logger(ConsoleLogger()) do
                     @info "Episode finished" r.total_steps r.total_episodes r.episode_reward r.episode_steps r.total_rpe moving_av_rpe r.episode_steprate r.step_info... r.run_state...
                 end
+                (r.total_episodes % r.logger_flush_interval == 0) && flush(r.logger.stream)
             end
         end
         on_run_break!(algo, r)
         r.total_time = time() - r.start_time
         @info "Run stopped" r.total_time
+        flush(r.logger.stream)
 
         @info "Closing env"
         close!(env)
         on_env_close!(algo, r)
+        flush(r.logger.stream)
 
         @info "Run finished" r.total_steps r.total_reward r.total_episodes r.total_rpe
         with_logger(ConsoleLogger()) do
             @info "Run finished" r.total_time r.total_steps r.total_reward r.total_episodes r.total_rpe moving_av_rpe
         end
         on_run_finish!(algo, r)
+        flush(r.logger.stream)
         close(r.logger.stream)
     end
 end

@@ -6,6 +6,7 @@ using Random
 using Flux
 using CUDA
 using Flux.Optimise
+using Logging
 
 
 mutable struct DQNAlgo <: AbstractRLAlgo
@@ -58,6 +59,9 @@ function RL.init!(d::DQNAlgo, r::RLRun)
     r.run_state[:policy_updates] = 0
     r.run_state[:epsilon] = 1
     @info "Initialized DQN" d.state_shape d.n_actions d.device d.qmodel d.optimizer d.max_ep_steps
+    !r.no_console_logs && with_logger(ConsoleLogger()) do
+        @info "Initialized DQN" d.state_shape d.n_actions d.device d.qmodel d.optimizer d.max_ep_steps
+    end
 end
 
 
