@@ -1,8 +1,9 @@
 
 abstract type AbstractRLWrapper <: AbstractRLEnv end # Some wrapper written in Julia
+import Random
 
 id(env::AbstractRLWrapper) = id(env.env)
-seed!(env::AbstractRLWrapper, seed) = seed!(env.env, seed)
+Random.seed!(env::AbstractRLWrapper, seed) = Random.seed!(env.env, seed)
 reset!(env::AbstractRLWrapper) = reset!(env.env)
 step!(env::AbstractRLWrapper, action) = step!(env.env, action)
 render(env::AbstractRLWrapper, mode::String) = render(env.env, mode)

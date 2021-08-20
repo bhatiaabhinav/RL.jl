@@ -1,7 +1,8 @@
 abstract type AbstractRLEnv end
+import Random
 
 id(env::AbstractRLEnv) = error("Not implemented")
-seed!(env::AbstractRLEnv, seed) = @warn "not implemented"
+Random.seed!(env::AbstractRLEnv, seed) = @warn "not implemented"
 reset!(env::AbstractRLEnv) = error("This function has not been implemented. Should return state")
 step!(env::AbstractRLEnv, action) = error("This function has not been implemented. Should return next_state, reward, terminal_signal, info_dictionary")
 render(env::AbstractRLEnv, mode::String) = nothing

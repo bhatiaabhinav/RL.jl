@@ -2,7 +2,7 @@ module RL
 
 export RLRun, run!, CompositeRLAlgo
 
-export AbstractRLEnv, AbstractRLWrapper, id, seed!, reset!, step!, render, close!, seed_action_space!, sample_action_space!, obs_space_shape, obs_space_type, is_discrete_action_space, action_space_n, action_space_shape, action_space_low, action_space_high, max_episode_steps
+export AbstractRLEnv, AbstractRLWrapper, id, reset!, step!, render, close!, seed_action_space!, sample_action_space!, obs_space_shape, obs_space_type, is_discrete_action_space, action_space_n, action_space_shape, action_space_low, action_space_high, max_episode_steps
 export AbstractRLAlgo, id, full_description, RLRun, interrupt!, run!
 export CompositeRLAlgo
 

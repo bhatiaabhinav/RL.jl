@@ -1,4 +1,5 @@
-import ..RL: AbstractRLEnv, id, seed!, reset!, step!, render, close!, seed_action_space!, sample_action_space!, obs_space_type, obs_space_shape, is_discrete_action_space, action_space_n, action_space_shape, action_space_low, action_space_high, max_episode_steps
+import ..RL: AbstractRLEnv, id, reset!, step!, render, close!, seed_action_space!, sample_action_space!, obs_space_type, obs_space_shape, is_discrete_action_space, action_space_n, action_space_shape, action_space_low, action_space_high, max_episode_steps
+import Random
 
 abstract type GymEnv <: AbstractRLEnv end
 
@@ -25,7 +26,7 @@ end
 
 id(env::GymEnv) = env.pyenv.unwrapped.spec.id
 max_episode_steps(env::GymEnv) = env.pyenv.spec.max_episode_steps
-seed!(env::GymEnv, seed) = env.pyenv.seed(seed)
+Random.seed!(env::GymEnv, seed) = env.pyenv.seed(seed)
 function reset!(env::GymEnv)
     obs = env.pyenv.reset()
     # This is to handle LazyFrame object returned by gym.FrameStack wrapper:

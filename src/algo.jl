@@ -1,4 +1,5 @@
 using Logging
+import Random
 
 abstract type AbstractRLAlgo end
 
@@ -105,7 +106,7 @@ function run!(r::RLRun)
         flush(r.logger.stream)
 
         @info "Seeding environment" r.seed
-        seed!(env, r.seed)
+        Random.seed!(env, r.seed)
 
         @info "Starting run"
         with_logger(ConsoleLogger()) do
