@@ -1,7 +1,7 @@
 name = "RL"
 uuid = "c5f37494-6764-4c5d-bca1-8f7047e2e011"
 authors = ["abhinav.bhatia.me@gmail.com"]
-version = "1.2.0"
+version = "1.3.0"
 
 [deps]
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"

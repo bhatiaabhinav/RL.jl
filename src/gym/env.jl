@@ -1,4 +1,5 @@
 import ..RL: AbstractRLEnv, id, reset!, step!, render, close!, seed_action_space!, sample_action_space!, obs_space_type, obs_space_shape, is_discrete_action_space, action_space_n, action_space_shape, action_space_low, action_space_high, max_episode_steps
+using RL
 import Random
 
 abstract type GymEnv <: AbstractRLEnv end
@@ -69,7 +70,17 @@ function step!(env::GymContinuousEnv, action)
     return convert(env.ob_type, obs), r, d, info
 end
 
-render(env::GymEnv) = env.pyenv.render()
+function render(env::GymEnv; mode::RenderMode=RENDER_MODE_HUMAN)
+    if mode == RENDER_MODE_HUMAN
+        env.pyenv.render()
+        return nothing
+    elseif mode == RENDER_MODE_RGB_ARRAY
+        return env.pyenv.render(mode="rgb_array")
+    elseif mode == RENDER_MODE_ANSI
+        return env.pyenv.render(mode="ansi")
+    end
+end
+
 close!(env::GymEnv) = env.pyenv.close()
 seed_action_space!(env::GymEnv, seed) = env.pyenv.action_space.seed(seed)
 sample_action_space!(env::GymDiscreteEnv) = env.pyenv.action_space.sample() + 1
