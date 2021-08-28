@@ -65,4 +65,4 @@ end
 
 categorical_sample(rng, values, probability_weights) = sample(rng, values, ProbabilityWeights(probability_weights))
 
-boltzman_sample(rng, x; α=1) = categorical_sample(rng, 1:length(x), safe_softmax(x, α=α))
+boltzman_sample(rng, x; α=1) = α > 0 ? categorical_sample(rng, 1:length(x), safe_softmax(x, α=α)) : argmax(x)

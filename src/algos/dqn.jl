@@ -1,6 +1,6 @@
 using ..RL
 using ..Common
-using ..Common: copy_net!, linear_schedule, preprocess, gradient_wrt_params, clip_gradients!
+using ..Common: copy_net!, linear_schedule, preprocess, gradient_wrt_params, clip_gradients!, boltzman_sample
 using ..Models
 using Random
 using Flux
@@ -15,6 +15,7 @@ mutable struct DQNAlgo <: AbstractRLAlgo
     min_explore_steps::Int
     epsilon::Float32
     epsilon_schedule_steps::Int
+    policy_temperature::Float32  # for soft policy
     use_mse_loss::Bool
     mb_size::Int
     lr::Float32
@@ -35,13 +36,13 @@ mutable struct DQNAlgo <: AbstractRLAlgo
     target_qmodel::QModel
     optimizer
     max_ep_steps::Int
-    function DQNAlgo(;double_dqn=false, sarsa_dqn=false, min_explore_steps=10000, epsilon, epsilon_schedule_steps=10000, dqn_mse, mb_size=32, lr=0.0001, sgd_steps_per_transition=1, grad_clip=Inf32, nsteps=1, exp_buff_len=1000000, train_interval_steps=1, target_copy_interval_steps=2000, no_gpu=false, kwargs...)
-        d = new(double_dqn, sarsa_dqn, min_explore_steps, epsilon, epsilon_schedule_steps, dqn_mse, mb_size, lr, sgd_steps_per_transition, grad_clip, nsteps, exp_buff_len, train_interval_steps, target_copy_interval_steps, no_gpu)
+    function DQNAlgo(;double_dqn=false, sarsa_dqn=false, min_explore_steps=10000, epsilon=0.1, epsilon_schedule_steps=10000, policy_temperature=0, dqn_mse=false, mb_size=32, lr=0.0001, sgd_steps_per_transition=1, grad_clip=Inf32, nsteps=1, exp_buff_len=1000000, train_interval_steps=1, target_copy_interval_steps=2000, no_gpu=false, kwargs...)
+        d = new(double_dqn, sarsa_dqn, min_explore_steps, epsilon, epsilon_schedule_steps, policy_temperature, dqn_mse, mb_size, lr, sgd_steps_per_transition, grad_clip, nsteps, exp_buff_len, train_interval_steps, target_copy_interval_steps, no_gpu)
     end
 end
 
 RL.id(d::DQNAlgo) = "Deep Q Network (DQN) with double_dqn=$(d.double_dqn), sarsa_dqn=$(d.sarsa_dqn), mse_loss=$(d.use_mse_loss), nsteps=$(d.nsteps)"
-RL.description(d::DQNAlgo) = "Mnih et al. 2015. Assumes discrete action space and continuous state space. If double_dqn is true, Hasselt et al. 2015. Is sarsa_dqn is true, the action for the next state is sampled according to behavior policy e.g. epsilon-greedy during bellman update instead of the taking the (greedy) action with the maximum q value. sarsa_dqn overrides double_dqn. if dqn_mse is true, MSE loss is used instead of Huber. Adam optimizer. Done signal is ignored for bellman update if the episode ended due to the time limit i.e. due to max_episode_steps(env)."
+RL.description(d::DQNAlgo) = "Mnih et al. 2015. Assumes discrete action space and continuous state space. If double_dqn is true, Hasselt et al. 2015. Is sarsa_dqn (expected-SARSA) is true, the action for the next state is sampled according to behavior policy (e.g., epsilon-greedy) during bellman update instead of the taking the (greedy) action with the maximum q value. sarsa_dqn overrides double_dqn. if dqn_mse is true, MSE loss is used instead of Huber. When policy_temperature τ > 0, ϵ-softmax policy is used i.e., π(s,a) ∝ e^(q(s,a)/τ) for exploration and softmax for exploitation. Adam optimizer. Done signal is ignored for bellman update if the episode ended due to the time limit i.e. due to max_episode_steps(env)."
 
 
 function RL.init!(d::DQNAlgo, r::RLRun)
@@ -74,7 +75,7 @@ function RL.act!(d::DQNAlgo, r::RLRun)
         obs = r.step_obs |> preprocess
         obs = reshape(obs, size(obs)..., 1) |> d.device
         q = d.qmodel(obs)[:, 1] |> cpu
-        return argmax(q)
+        return boltzman_sample(d.rng, q, α=d.policy_temperature)
     end
 end
 
@@ -104,17 +105,19 @@ function dqn_train(d::DQNAlgo, r::RLRun, sgd_steps)
                     if rand(d.rng) < ep
                         na = rand(d.rng, 1:d.n_actions)
                     else
-                        na = argmax(mb_nq[:, i])
+                        na = boltzman_sample(d.rng, mb_nq[:, i], α=d.policy_temperature)
                     end
                 else
-                    na = argmax(mb_nq[:, i])
+                    na = boltzman_sample(d.rng, mb_nq[:, i], α=d.policy_temperature)
                 end
                 nq = mb_target_nq[na, i]
                 mb_q[mb_a[i], i] = mb_r[i] + (1 - mb_d[i]) * (r.gamma ^ mb_h[i]) * nq
             end
         else
             for i in 1:d.mb_size
-                mb_q[mb_a[i], i] = mb_r[i] + (1 - mb_d[i]) * (r.gamma ^ mb_h[i]) * maximum(mb_target_nq[:, i])
+                na = boltzman_sample(d.rng, mb_target_nq[:, i], α=d.policy_temperature)
+                nq = mb_target_nq[na, i]
+                mb_q[mb_a[i], i] = mb_r[i] + (1 - mb_d[i]) * (r.gamma ^ mb_h[i]) * nq
             end
         end
         mb_q = mb_q |> d.device
