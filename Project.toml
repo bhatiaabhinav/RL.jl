@@ -1,9 +1,10 @@
 name = "RL"
 uuid = "c5f37494-6764-4c5d-bca1-8f7047e2e011"
 authors = ["abhinav.bhatia.me@gmail.com"]
-version = "1.4.1"
+version = "1.5.0"
 
 [deps]
+BSON = "fbb218c0-5317-5bc6-957e-2ee96dd4b1f0"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"

@@ -7,6 +7,7 @@ using Flux
 using CUDA
 using Flux.Optimise
 using Logging
+import BSON
 
 
 mutable struct DQNAlgo <: AbstractRLAlgo
@@ -26,6 +27,8 @@ mutable struct DQNAlgo <: AbstractRLAlgo
     train_interval_steps::Int
     target_copy_interval_steps::Int
     no_gpu::Bool
+    save_model_interval_steps::Int
+    load_model_path::Union{String, Nothing}
 
     rng::MersenneTwister
     state_shape
@@ -36,8 +39,8 @@ mutable struct DQNAlgo <: AbstractRLAlgo
     target_qmodel::QModel
     optimizer
     max_ep_steps::Int
-    function DQNAlgo(;double_dqn=false, sarsa_dqn=false, min_explore_steps=10000, epsilon=0.1, epsilon_schedule_steps=10000, policy_temperature=0, dqn_mse=false, mb_size=32, lr=0.0001, sgd_steps_per_transition=1, grad_clip=Inf32, nsteps=1, exp_buff_len=1000000, train_interval_steps=1, target_copy_interval_steps=2000, no_gpu=false, kwargs...)
-        d = new(double_dqn, sarsa_dqn, min_explore_steps, epsilon, epsilon_schedule_steps, policy_temperature, dqn_mse, mb_size, lr, sgd_steps_per_transition, grad_clip, nsteps, exp_buff_len, train_interval_steps, target_copy_interval_steps, no_gpu)
+    function DQNAlgo(;double_dqn=false, sarsa_dqn=false, min_explore_steps=10000, epsilon=0.1, epsilon_schedule_steps=10000, policy_temperature=0, dqn_mse=false, mb_size=32, lr=0.0001, sgd_steps_per_transition=1, grad_clip=Inf32, nsteps=1, exp_buff_len=1000000, train_interval_steps=1, target_copy_interval_steps=2000, no_gpu=false, save_model_interval_steps=100000, load_model_path=nothing, kwargs...)
+        d = new(double_dqn, sarsa_dqn, min_explore_steps, epsilon, epsilon_schedule_steps, policy_temperature, dqn_mse, mb_size, lr, sgd_steps_per_transition, grad_clip, nsteps, exp_buff_len, train_interval_steps, target_copy_interval_steps, no_gpu, save_model_interval_steps, load_model_path)
     end
 end
 
@@ -51,14 +54,25 @@ function RL.init!(d::DQNAlgo, r::RLRun)
     d.state_shape = obs_space_shape(r.env)
     d.n_actions = action_space_n(r.env)
     d.exp_buff = ExperienceBuffer{eltype(obs_space_type(r.env)),Int}(d.exp_buff_len, d.mb_size, nsteps=d.nsteps, gamma=r.gamma, ob_space_shape=d.state_shape)
-    d.device = d.no_gpu ? cpu : gpu 
-    d.qmodel = QModel(d.state_shape, d.n_actions) |> d.device
-    d.target_qmodel = QModel(d.state_shape, d.n_actions) |> d.device
+    d.device = d.no_gpu ? cpu : gpu
+    if isnothing(d.load_model_path)
+        d.qmodel = QModel(d.state_shape, d.n_actions) |> d.device
+        d.target_qmodel = QModel(d.state_shape, d.n_actions) |> d.device
+    else
+        d.qmodel = BSON.load(d.load_model_path, @__MODULE__)[:qmodel] |> d.device
+        d.target_qmodel = BSON.load(d.load_model_path, @__MODULE__)[:qmodel] |> d.device
+        @info "Loaded model" d.load_model_path
+        !r.no_console_logs && with_logger(ConsoleLogger()) do
+            @info "Loaded model" d.load_model_path
+        end
+    end
     copy_net!(d.qmodel, d.target_qmodel)
     d.optimizer = ADAM(d.lr)
     d.max_ep_steps = max_episode_steps(r.env)
     r.run_state[:policy_updates] = 0
     r.run_state[:epsilon] = 1
+    rm(joinpath(r.logdir, "models"), force=true, recursive=true)
+    mkpath(joinpath(r.logdir, "models"))
     @info "Initialized DQN" d.state_shape d.n_actions d.device d.qmodel d.optimizer d.max_ep_steps
     !r.no_console_logs && with_logger(ConsoleLogger()) do
         @info "Initialized DQN" d.state_shape d.n_actions d.device d.qmodel d.optimizer d.max_ep_steps
@@ -140,4 +154,17 @@ function RL.on_env_step!(d::DQNAlgo, r::RLRun)
     if r.total_steps % d.target_copy_interval_steps == 0
         copy_net!(d.qmodel, d.target_qmodel)
     end
+
+    r.total_steps % d.save_model_interval_steps == 0  &&  save_model(d, r)
+end
+
+function RL.on_run_break!(d::DQNAlgo, r::RLRun)
+    save_model(d, r)
+end
+
+function save_model(d::DQNAlgo, r::RLRun)
+    qmodel = cpu(d.qmodel)
+    BSON.@save joinpath(r.logdir, "models", "qmodel-$(r.total_steps)steps-$(r.total_episodes)episodes.bson") qmodel
+    BSON.@save joinpath(r.logdir, "models", "qmodel-latest.bson") qmodel
+    @info "Saved Model"
 end
