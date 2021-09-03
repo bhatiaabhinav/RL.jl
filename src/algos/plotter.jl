@@ -2,10 +2,10 @@ using ..RL
 using Plots
 
 mutable struct PlotterAlgo <: AbstractRLAlgo
-    episode_rewards::Vector{Float32}
     save_interval::Int
     no_display::Bool
-    PlotterAlgo(;save_interval=1000, no_display=false) = new(Float32[], save_interval, no_display)
+    plot
+    PlotterAlgo(;save_interval=1000, no_display=false) = new(save_interval, no_display, nothing)
 end
 
 RL.id(p::PlotterAlgo) = "Plotter"
@@ -14,20 +14,24 @@ RL.description(p::PlotterAlgo) = "Plots episode-rewards on y-axis vs episode-num
 function RL.init!(p::PlotterAlgo, r::RLRun)
     rm(joinpath(r.logdir, "plots"), force=true, recursive=true)
     mkpath(joinpath(r.logdir, "plots"))
+    if p.no_display
+        ENV["GKSwstype"] = "100"  # Headless mode
+    end
+    gr()
+    p.plot = Plots.plot([], [], label="Reward", legend=:topleft)
+    plot!(p.plot, [], [], label="Moving Avg")
+    Plots.xlabel!(p.plot, "Episode No.")
+    Plots.ylabel!(p.plot, "Reward")
 end
 
 function RL.on_env_terminal_step!(p::PlotterAlgo, r::RLRun)
-    push!(p.episode_rewards, r.episode_reward)
-    # plot(1:r.total_episodes, p.episode_rewards)
-    pl = plot(1:r.total_episodes, p.episode_rewards, title="Reward vs Episode", label="")
-    xlabel!("Episode No.")
-    ylabel!("Reward")
+    push!(p.plot, [(r.total_episodes, r.episode_reward), (r.total_episodes, r.moving_window_rpe)])
     if r.total_episodes % p.save_interval == 0
-        savefig(pl, joinpath(r.logdir, "plots", "rpe.png"))
+        !p.no_display  &&  display(p.plot)
+        Plots.savefig(p.plot, joinpath(r.logdir, "plots", "rpe.png"))
     end
-    !p.no_display && display(pl)
 end
 
-function RL.on_run_break!(p::PlotterAlgo, r::RLRun)
-    savefig(joinpath(r.logdir, "plots", "rpe.png"))
+function RL.on_run_finish!(p::PlotterAlgo, r::RLRun)
+    Plots.savefig(p.plot, joinpath(r.logdir, "plots", "rpe.png"))
 end
