@@ -44,7 +44,7 @@ mutable struct RLRun
     logger_flush_interval::Int
     logger::AbstractLogger
 
-    function RLRun(name::String, env::AbstractRLEnv, algo::AbstractRLAlgo; max_steps::Integer, max_episodes::Integer, seed::Integer=0, gamma::Real=0.99, logdir::String="logs/$(id(env))/$name", description::String="", no_console_logs::Bool = false, logger_flush_interval::Integer = 10, kwargs...)
+    function RLRun(name::String, env::AbstractRLEnv, algo::AbstractRLAlgo; max_steps::Integer, max_episodes::Integer, seed::Integer=0, gamma::Real=0.99, logdir::String="logs/$(id(env))/$name", description::String="", no_console_logs::Bool = false, logger_flush_interval::Integer = 100, kwargs...)
         rlrun = new(name, env, algo, max_steps, max_episodes, seed, gamma, logdir, description,  0, 0, 0, 0, false, 0, 0, 0, 0, 0, 0, Dict{Symbol, Any}(), 0, 0, nothing, nothing, nothing, 0, true, Dict{Symbol, Any}(), Dict{Symbol,Any}(), no_console_logs, logger_flush_interval)
         mkpath(logdir)
         rlrun.logger = ConsoleLogger(open(joinpath(logdir, "rlrun_logs.txt"), "w+"))
