@@ -1,5 +1,6 @@
 using Logging
 import Random
+using StatsBase
 
 abstract type AbstractRLAlgo end
 
@@ -22,6 +23,8 @@ mutable struct RLRun
     interrupted::Bool
     total_time::Float64
     total_rpe::Float64
+    moving_window_rpe::Float64
+    episode_rewards_history::Vector{Float64}
 
     episode_start_time::Float64
     episode_steps::Int
@@ -40,12 +43,14 @@ mutable struct RLRun
 
     run_state::Dict{Symbol,Any} # Anything else not recorded as a field of this object. RL Algos can use it to store/exchange information.
 
+    moving_window_size::Int
     no_console_logs::Bool
     logger_flush_interval::Int
     logger::AbstractLogger
+    
 
-    function RLRun(name::String, env::AbstractRLEnv, algo::AbstractRLAlgo; max_steps::Integer, max_episodes::Integer, seed::Integer=0, gamma::Real=0.99, logdir::String="logs/$(id(env))/$name", description::String="", no_console_logs::Bool = false, logger_flush_interval::Integer = 100, kwargs...)
-        rlrun = new(name, env, algo, max_steps, max_episodes, seed, gamma, logdir, description,  0, 0, 0, 0, false, 0, 0, 0, 0, 0, 0, Dict{Symbol, Any}(), 0, 0, nothing, nothing, nothing, 0, true, Dict{Symbol, Any}(), Dict{Symbol,Any}(), no_console_logs, logger_flush_interval)
+    function RLRun(name::String, env::AbstractRLEnv, algo::AbstractRLAlgo; max_steps::Integer, max_episodes::Integer, seed::Integer=0, gamma::Real=0.99, logdir::String="logs/$(id(env))/$name", description::String="", moving_window_size::Integer=100, no_console_logs::Bool = false, logger_flush_interval::Integer = 100, kwargs...)
+        rlrun = new(name, env, algo, max_steps, max_episodes, seed, gamma, logdir, description,  0, 0, 0, 0, false, 0, 0, 0, Float64[], 0, 0, 0, 0, Dict{Symbol, Any}(), 0, 0, nothing, nothing, nothing, 0, true, Dict{Symbol, Any}(), Dict{Symbol,Any}(), moving_window_size, no_console_logs, logger_flush_interval)
         mkpath(logdir)
         rlrun.logger = ConsoleLogger(open(joinpath(logdir, "rlrun_logs.txt"), "w+"))
         return rlrun
@@ -90,7 +95,6 @@ function run!(r::RLRun)
         algo = r.algo
         env = r.env
         r.step_terminal = true
-        moving_av_rpe = 0
         function should_stop()
             return r.interrupted || (r.total_steps >= r.max_steps) || (r.total_episodes >= r.max_episodes)
         end
@@ -154,12 +158,18 @@ function run!(r::RLRun)
             if r.step_terminal
                 @debug "terminal_signal"
                 r.total_episodes += 1
+                push!(r.episode_rewards_history, r.episode_reward)
                 r.total_rpe = r.total_reward / r.total_episodes
-                moving_av_rpe = 0.99 * moving_av_rpe + 0.01 * r.episode_reward
+                if r.total_episodes <= r.moving_window_size
+                    r.moving_window_rpe = r.total_rpe
+                else
+                    moving_window_sum = r.moving_window_rpe * r.moving_window_size - r.episode_rewards_history[end-r.moving_window_size] + r.episode_reward
+                    r.moving_window_rpe = moving_window_sum / r.moving_window_size
+                end
                 on_env_terminal_step!(algo, r)
-                @info "Episode finished" r.total_steps r.total_episodes r.episode_reward r.episode_steps r.total_rpe moving_av_rpe r.step_info... r.run_state...
+                @info "Episode finished" r.total_steps r.total_episodes r.episode_reward r.episode_steps r.total_rpe r.moving_window_rpe r.step_info... r.run_state...
                 !r.no_console_logs && with_logger(ConsoleLogger()) do
-                    @info "Episode finished" r.total_steps r.total_episodes r.episode_reward r.episode_steps r.total_rpe moving_av_rpe r.episode_steprate r.step_info... r.run_state...
+                    @info "Episode finished" r.total_steps r.total_episodes r.episode_reward r.episode_steps r.total_rpe r.moving_window_rpe r.episode_steprate r.step_info... r.run_state...
                 end
                 (r.total_episodes % r.logger_flush_interval == 0) && flush(r.logger.stream)
             end
@@ -174,9 +184,9 @@ function run!(r::RLRun)
         on_env_close!(algo, r)
         flush(r.logger.stream)
 
-        @info "Run finished" r.total_steps r.total_reward r.total_episodes r.total_rpe
+        @info "Run finished" r.total_steps r.total_reward r.total_episodes r.total_rpe r.moving_window_rpe
         with_logger(ConsoleLogger()) do
-            @info "Run finished" r.total_time r.total_steps r.total_reward r.total_episodes r.total_rpe moving_av_rpe
+            @info "Run finished" r.total_time r.total_steps r.total_reward r.total_episodes r.total_rpe r.moving_window_rpe
         end
         on_run_finish!(algo, r)
         flush(r.logger.stream)
