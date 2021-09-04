@@ -1,6 +1,6 @@
 using ..RL
 using ..Common
-using ..Common: copy_net!, linear_schedule, preprocess, gradient_wrt_params, clip_gradients!, boltzman_sample
+using ..Common: copy_net!, linear_schedule, preprocess, gradient_wrt_params, clip_gradients!, boltzman_sample, safe_softmax
 using ..Models
 using Random
 using Flux
@@ -45,7 +45,16 @@ mutable struct DQNAlgo <: AbstractRLAlgo
 end
 
 RL.id(d::DQNAlgo) = "Deep Q Network (DQN) with double_dqn=$(d.double_dqn), sarsa_dqn=$(d.sarsa_dqn), mse_loss=$(d.use_mse_loss), nsteps=$(d.nsteps)"
-RL.description(d::DQNAlgo) = "Mnih et al. 2015. Assumes discrete action space and continuous state space. If double_dqn is true, Hasselt et al. 2015. Is sarsa_dqn (expected-SARSA) is true, the action for the next state is sampled according to behavior policy (e.g., epsilon-greedy) during bellman update instead of the taking the (greedy) action with the maximum q value. sarsa_dqn overrides double_dqn. if dqn_mse is true, MSE loss is used instead of Huber. When policy_temperature τ > 0, ϵ-softmax policy is used i.e., π(s,a) ∝ e^(q(s,a)/τ) for exploration and softmax for exploitation. Adam optimizer. Done signal is ignored for bellman update if the episode ended due to the time limit i.e. due to max_episode_steps(env)."
+RL.description(d::DQNAlgo) = "Based on Mnih et al. 2015.
+Assumes discrete action space and continuous state space.
+Policy temperature τ specifies the temperature of the target policy so that π(s,a) ∝ e^(q(s,a)/τ). τ=0 leads to a greedy policy.
+The behavior policy is ϵ-target policy.
+For enhanced stability, the value of the next state is always calculated using summation Σₐ(π(s',a) * q(s',a)) where π is the target policy, instead of taking the q value of an action sampled from π. This method, known as expected-SARSA (Sutton & Barto, Reinforcement Learning, 2018, Section 6.6).
+sarsa_dqn: if true, the target policy becomes same as the behavior policy i.e. includes epsilon apart from the policy_temperature.
+double_dqn: double learning to overcome maximization bias (Sutton & Barto, Reinforcement Learning, 2018, Section 6.7;  Hasselt et al., 2015).
+dqn_mse: MSE loss is used instead of Huber loss.
+Adam optimizer is used for q-updates.
+Done/terminal signal is ignored for bellman update for episodes truncated due to a timelimit i.e. due to max_episode_steps(env)."
 
 
 function RL.init!(d::DQNAlgo, r::RLRun)
@@ -99,7 +108,7 @@ function dqn_loss_fn(qmodel, mb_s, mb_q; dqn_mse=false)
 end
 
 function dqn_train(d::DQNAlgo, r::RLRun, sgd_steps)
-    loss, mb_v = 0, 0
+    loss, mb_v, mb_ent = 0.0, 0.0, 0.0
     for step_no in 1:sgd_steps
         mb_s, mb_a, mb_r, mb_ns, mb_d, mb_h, _ =  random_experiences_unzipped(d.rng, d.exp_buff, d.mb_size)
         @debug "sampled minibatch" size(mb_s) size(mb_a) size(mb_r) size(mb_ns) size(mb_d) size(mb_h)
@@ -109,31 +118,31 @@ function dqn_train(d::DQNAlgo, r::RLRun, sgd_steps)
 
         ep = r.run_state[:epsilon]
         mb_q = d.qmodel(mb_s) |> cpu
-        mb_v = sum(maximum(mb_q, dims=1)) / d.mb_size
+        for i in 1:d.mb_size
+            if d.sarsa_dqn
+                probs = ep / d.n_actions .+ (1 - ep) .* safe_softmax(mb_q[:, i], α=d.policy_temperature)
+            else
+                probs = safe_softmax(mb_q[:, i], α=d.policy_temperature)
+            end
+            mb_v += sum(mb_q[:, i] .* probs) / d.mb_size
+            mb_ent += any(probs .== 0) ? 0 : sum(.-probs .* log.(probs)) / d.mb_size
+        end
         mb_target_nq = d.target_qmodel(mb_ns) |> cpu
 
-        if d.sarsa_dqn || d.double_dqn
-            mb_nq = d.qmodel(mb_ns) |> cpu
-            for i in 1:d.mb_size
-                if d.sarsa_dqn
-                    if rand(d.rng) < ep
-                        na = rand(d.rng, 1:d.n_actions)
-                    else
-                        na = boltzman_sample(d.rng, mb_nq[:, i], α=d.policy_temperature)
-                    end
-                else
-                    na = boltzman_sample(d.rng, mb_nq[:, i], α=d.policy_temperature)
-                end
-                nq = mb_target_nq[na, i]
-                mb_q[mb_a[i], i] = mb_r[i] + (1 - mb_d[i]) * (r.gamma ^ mb_h[i]) * nq
-            end
-        else
-            for i in 1:d.mb_size
-                na = boltzman_sample(d.rng, mb_target_nq[:, i], α=d.policy_temperature)
-                nq = mb_target_nq[na, i]
-                mb_q[mb_a[i], i] = mb_r[i] + (1 - mb_d[i]) * (r.gamma ^ mb_h[i]) * nq
-            end
+        next_acting_q = mb_target_nq
+        if d.double_dqn
+            next_acting_q = d.qmodel(mb_ns) |> cpu
         end
+        for i in 1:d.mb_size
+            if d.sarsa_dqn
+                probs = ep / d.n_actions .+ (1 - ep) .* safe_softmax(next_acting_q[:, i], α=d.policy_temperature)
+            else
+                probs = safe_softmax(next_acting_q[:, i], α=d.policy_temperature)
+            end
+            nv = sum(probs .* mb_target_nq[:, i])
+            mb_q[mb_a[i], i] = mb_r[i] + (1 - mb_d[i]) * (r.gamma ^ mb_h[i]) * nv
+        end
+
         mb_q = mb_q |> d.device
         grads, loss = gradient_wrt_params(params(d.qmodel), dqn_loss_fn, d.qmodel, mb_s, mb_q; dqn_mse=d.use_mse_loss)
         clip_gradients!(grads, d.grad_clip)
@@ -142,7 +151,8 @@ function dqn_train(d::DQNAlgo, r::RLRun, sgd_steps)
     end  
     r.run_state[:loss] = loss
     r.run_state[:mb_v] = mb_v
-    return loss, mb_v
+    r.run_state[:mb_entropy] = mb_ent
+    return loss, mb_v, mb_ent
 end
 
 function RL.on_env_step!(d::DQNAlgo, r::RLRun)

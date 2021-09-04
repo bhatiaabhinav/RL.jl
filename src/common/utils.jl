@@ -57,10 +57,18 @@ function gradient_wrt_params(paramss, loss_fn, args...; kwargs...)
 end
 
 function safe_softmax(x; α=1)
-    max_x = maximum(x)
-    _x = (x .- max_x) ./ α
-    exps = exp.(_x)
-    return exps ./ sum(exps)
+    T = eltype(x)
+    if α > 0
+        max_x = maximum(x)
+        _x = (x .- max_x) ./ T(α)
+        exps = exp.(_x)
+        return exps ./ sum(exps)
+    else
+        p = zeros(T, length(x))
+        a = argmax(x)
+        p[a] = 1
+        return p
+    end
 end
 
 categorical_sample(rng, values, probability_weights) = sample(rng, values, ProbabilityWeights(probability_weights))
