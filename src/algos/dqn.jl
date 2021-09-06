@@ -29,6 +29,7 @@ mutable struct DQNAlgo <: AbstractRLAlgo
     no_gpu::Bool
     save_model_interval_steps::Int
     load_model_path::Union{String, Nothing}
+    eval_mode::Bool
 
     rng::MersenneTwister
     state_shape
@@ -39,8 +40,8 @@ mutable struct DQNAlgo <: AbstractRLAlgo
     target_qmodel::QModel
     optimizer
     max_ep_steps::Int
-    function DQNAlgo(;double_dqn=false, sarsa_dqn=false, min_explore_steps=10000, epsilon=0.1, epsilon_schedule_steps=10000, policy_temperature=0, dqn_mse=false, mb_size=32, lr=0.0001, sgd_steps_per_transition=1, grad_clip=Inf32, nsteps=1, exp_buff_len=1000000, train_interval_steps=1, target_copy_interval_steps=2000, no_gpu=false, save_model_interval_steps=100000, load_model_path=nothing, kwargs...)
-        d = new(double_dqn, sarsa_dqn, min_explore_steps, epsilon, epsilon_schedule_steps, policy_temperature, dqn_mse, mb_size, lr, sgd_steps_per_transition, grad_clip, nsteps, exp_buff_len, train_interval_steps, target_copy_interval_steps, no_gpu, save_model_interval_steps, load_model_path)
+    function DQNAlgo(;double_dqn=false, sarsa_dqn=false, min_explore_steps=10000, epsilon=0.1, epsilon_schedule_steps=10000, policy_temperature=0, dqn_mse=false, mb_size=32, lr=0.0001, sgd_steps_per_transition=1, grad_clip=Inf32, nsteps=1, exp_buff_len=1000000, train_interval_steps=1, target_copy_interval_steps=2000, no_gpu=false, save_model_interval_steps=100000, load_model_path=nothing, eval_mode=false, kwargs...)
+        d = new(double_dqn, sarsa_dqn, min_explore_steps, epsilon, epsilon_schedule_steps, policy_temperature, dqn_mse, mb_size, lr, sgd_steps_per_transition, grad_clip, nsteps, exp_buff_len, train_interval_steps, target_copy_interval_steps, no_gpu, save_model_interval_steps, load_model_path, eval_mode)
     end
 end
 
@@ -54,7 +55,8 @@ sarsa_dqn: if true, the target policy becomes same as the behavior policy i.e. i
 double_dqn: double learning to overcome maximization bias (Sutton & Barto, Reinforcement Learning, 2018, Section 6.7;  Hasselt et al., 2015).
 dqn_mse: MSE loss is used instead of Huber loss.
 Adam optimizer is used for q-updates.
-Done/terminal signal is ignored for bellman update for episodes truncated due to a timelimit i.e. due to max_episode_steps(env)."
+Done/terminal signal is ignored for bellman update for episodes truncated due to a timelimit i.e. due to max_episode_steps(env).
+In eval_mode, the code associated with training does not run. Note that epsilon is *not* ignored in eval_mode. Set it to zero explicitly for evaluation, if that's what you wnat."
 
 
 function RL.init!(d::DQNAlgo, r::RLRun)
@@ -92,7 +94,7 @@ end
 function RL.act!(d::DQNAlgo, r::RLRun)
     ep = linear_schedule(r.total_steps - d.min_explore_steps, d.epsilon_schedule_steps, 1, d.epsilon)
     r.run_state[:epsilon] = ep
-    if r.total_steps < d.min_explore_steps || rand(d.rng) < ep
+    if r.total_steps < d.min_explore_steps || (ep > 0 && rand(d.rng) < ep)
         return rand(d.rng, 1:d.n_actions)
     else
         obs = r.step_obs |> preprocess
@@ -156,6 +158,8 @@ function dqn_train(d::DQNAlgo, r::RLRun, sgd_steps)
 end
 
 function RL.on_env_step!(d::DQNAlgo, r::RLRun)
+    d.eval_mode && return
+
     push!(d.exp_buff, r.step_obs, r.step_action, r.step_reward, r.step_next_obs, (r.episode_steps < d.max_ep_steps) && r.step_terminal, r.step_info)
 
     if r.total_steps >= d.min_explore_steps && r.total_steps % d.train_interval_steps == 0
