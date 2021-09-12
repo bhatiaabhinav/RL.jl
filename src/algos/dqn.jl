@@ -9,7 +9,17 @@ using Flux.Optimise
 using Logging
 import BSON
 
-
+"""Based on Mnih et al. 2015. \\
+Assumes discrete action space and continuous state space. \\
+Policy temperature τ specifies the temperature of the target policy so that π(s,a) ∝ e^(q(s,a)/τ). τ=0 leads to a greedy policy. \\
+The behavior policy is ϵ-target policy. \\
+For enhanced stability, the value of the next state is always calculated using summation Σₐ(π(s',a) * q(s',a)) where π is the target policy, instead of taking the q value of an action sampled from π. This method is known as expected-SARSA (Sutton & Barto, Reinforcement Learning, 2018, Section 6.6). \\
+`sarsa_dqn`: if true, the target policy becomes same as the behavior policy i.e. includes `epsilon` apart from the policy_temperature. \\
+`double_dqn`: double learning to overcome maximization bias (Sutton & Barto, Reinforcement Learning, 2018, Section 6.7;  Hasselt et al., 2015). \\
+`dqn_mse`: MSE loss is used instead of Huber loss. \\
+Adam optimizer is used for q-updates. \\
+Done/terminal signal is ignored for bellman update for episodes truncated due to a timelimit i.e. due to `max_episode_steps(env)`. \\
+In `eval_mode`, the code associated with training does not run. Note that `epsilon` is *not* ignored in eval_mode. Set it to zero explicitly for evaluation, if that's what you want."""
 mutable struct DQNAlgo <: AbstractRLAlgo
     double_dqn::Bool
     sarsa_dqn::Bool
@@ -34,10 +44,10 @@ mutable struct DQNAlgo <: AbstractRLAlgo
     rng::MersenneTwister
     state_shape
     n_actions::Int
-    exp_buff::ExperienceBuffer
+    exp_buff::Union{ExperienceBuffer, Nothing}
     device
     qmodel::QModel
-    target_qmodel::QModel
+    target_qmodel::Union{Nothing, QModel}
     optimizer
     max_ep_steps::Int
     function DQNAlgo(;double_dqn=false, sarsa_dqn=false, min_explore_steps=10000, epsilon=0.1, epsilon_schedule_steps=10000, policy_temperature=0, dqn_mse=false, mb_size=32, lr=0.0001, sgd_steps_per_transition=1, grad_clip=Inf32, nsteps=1, exp_buff_len=1000000, train_interval_steps=1, target_copy_interval_steps=2000, no_gpu=false, save_model_interval_steps=100000, load_model_path=nothing, eval_mode=false, kwargs...)
@@ -50,13 +60,13 @@ RL.description(d::DQNAlgo) = "Based on Mnih et al. 2015.
 Assumes discrete action space and continuous state space.
 Policy temperature τ specifies the temperature of the target policy so that π(s,a) ∝ e^(q(s,a)/τ). τ=0 leads to a greedy policy.
 The behavior policy is ϵ-target policy.
-For enhanced stability, the value of the next state is always calculated using summation Σₐ(π(s',a) * q(s',a)) where π is the target policy, instead of taking the q value of an action sampled from π. This method, known as expected-SARSA (Sutton & Barto, Reinforcement Learning, 2018, Section 6.6).
+For enhanced stability, the value of the next state is always calculated using summation Σₐ(π(s',a) * q(s',a)) where π is the target policy, instead of taking the q value of an action sampled from π. This method is known as expected-SARSA (Sutton & Barto, Reinforcement Learning, 2018, Section 6.6).
 sarsa_dqn: if true, the target policy becomes same as the behavior policy i.e. includes epsilon apart from the policy_temperature.
 double_dqn: double learning to overcome maximization bias (Sutton & Barto, Reinforcement Learning, 2018, Section 6.7;  Hasselt et al., 2015).
 dqn_mse: MSE loss is used instead of Huber loss.
 Adam optimizer is used for q-updates.
 Done/terminal signal is ignored for bellman update for episodes truncated due to a timelimit i.e. due to max_episode_steps(env).
-In eval_mode, the code associated with training does not run. Note that epsilon is *not* ignored in eval_mode. Set it to zero explicitly for evaluation, if that's what you wnat."
+In eval_mode, the code associated with training does not run. Note that epsilon is *not* ignored in eval_mode. Set it to zero explicitly for evaluation, if that's what you want."
 
 
 function RL.init!(d::DQNAlgo, r::RLRun)
@@ -64,30 +74,32 @@ function RL.init!(d::DQNAlgo, r::RLRun)
     d.rng = MersenneTwister(r.seed)
     d.state_shape = obs_space_shape(r.env)
     d.n_actions = action_space_n(r.env)
-    d.exp_buff = ExperienceBuffer{eltype(obs_space_type(r.env)),Int}(d.exp_buff_len, d.mb_size, nsteps=d.nsteps, gamma=r.gamma, ob_space_shape=d.state_shape)
+    d.exp_buff_len = d.eval_mode ? 0 : min(d.exp_buff_len, r.max_steps)
+    d.exp_buff = d.eval_mode ? nothing : ExperienceBuffer{eltype(obs_space_type(r.env)),Int}(d.exp_buff_len, d.mb_size, nsteps=d.nsteps, gamma=r.gamma, ob_space_shape=d.state_shape)
     d.device = d.no_gpu ? cpu : gpu
     if isnothing(d.load_model_path)
         d.qmodel = QModel(d.state_shape, d.n_actions) |> d.device
-        d.target_qmodel = QModel(d.state_shape, d.n_actions) |> d.device
+        d.target_qmodel = d.eval_mode ? nothing : d.device(QModel(d.state_shape, d.n_actions))
     else
         d.qmodel = BSON.load(d.load_model_path, @__MODULE__)[:qmodel] |> d.device
-        d.target_qmodel = BSON.load(d.load_model_path, @__MODULE__)[:qmodel] |> d.device
+        d.target_qmodel = d.eval_mode ? nothing : d.device(BSON.load(d.load_model_path, @__MODULE__)[:qmodel])
         @info "Loaded model" d.load_model_path
         !r.no_console_logs && with_logger(ConsoleLogger()) do
             @info "Loaded model" d.load_model_path
         end
     end
-    copy_net!(d.qmodel, d.target_qmodel)
-    d.optimizer = ADAM(d.lr)
+    !d.eval_mode && copy_net!(d.qmodel, d.target_qmodel)
+    d.optimizer = d.eval_mode ? nothing : ADAM(d.lr)
     d.max_ep_steps = max_episode_steps(r.env)
     r.run_state[:policy_updates] = 0
     r.run_state[:epsilon] = 1
     rm(joinpath(r.logdir, "models"), force=true, recursive=true)
     mkpath(joinpath(r.logdir, "models"))
-    @info "Initialized DQN" d.state_shape d.n_actions d.device d.qmodel d.optimizer d.max_ep_steps
+    @info "Initialized DQN" d.state_shape d.n_actions d.device d.qmodel d.optimizer d.exp_buff_len d.max_ep_steps d.eval_mode
     !r.no_console_logs && with_logger(ConsoleLogger()) do
-        @info "Initialized DQN" d.state_shape d.n_actions d.device d.qmodel d.optimizer d.max_ep_steps
+        @info "Initialized DQN" d.state_shape d.n_actions d.device d.qmodel d.optimizer d.exp_buff_len d.max_ep_steps d.eval_mode
     end
+    return nothing
 end
 
 
@@ -158,22 +170,23 @@ function dqn_train(d::DQNAlgo, r::RLRun, sgd_steps)
 end
 
 function RL.on_env_step!(d::DQNAlgo, r::RLRun)
-    d.eval_mode && return
+    if !d.eval_mode
+        push!(d.exp_buff, r.step_obs, r.step_action, r.step_reward, r.step_next_obs, (r.episode_steps < d.max_ep_steps) && r.step_terminal, r.step_info)
 
-    push!(d.exp_buff, r.step_obs, r.step_action, r.step_reward, r.step_next_obs, (r.episode_steps < d.max_ep_steps) && r.step_terminal, r.step_info)
-
-    if r.total_steps >= d.min_explore_steps && r.total_steps % d.train_interval_steps == 0
-        dqn_train(d, r, d.sgd_steps_per_transition)
+        if r.total_steps >= d.min_explore_steps && r.total_steps % d.train_interval_steps == 0
+            dqn_train(d, r, d.sgd_steps_per_transition)
+        end
+        if r.total_steps % d.target_copy_interval_steps == 0
+            copy_net!(d.qmodel, d.target_qmodel)
+        end
     end
-    if r.total_steps % d.target_copy_interval_steps == 0
-        copy_net!(d.qmodel, d.target_qmodel)
-    end
-
     r.total_steps % d.save_model_interval_steps == 0  &&  save_model(d, r)
+    return nothing
 end
 
 function RL.on_run_break!(d::DQNAlgo, r::RLRun)
     save_model(d, r)
+    return nothing
 end
 
 function save_model(d::DQNAlgo, r::RLRun)
@@ -181,4 +194,5 @@ function save_model(d::DQNAlgo, r::RLRun)
     BSON.@save joinpath(r.logdir, "models", "qmodel-$(r.total_steps)steps-$(r.total_episodes)episodes.bson") qmodel
     BSON.@save joinpath(r.logdir, "models", "qmodel-latest.bson") qmodel
     @info "Saved Model"
+    return nothing
 end
