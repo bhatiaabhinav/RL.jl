@@ -17,6 +17,7 @@ function RL.init!(p::PlotInTerminalAlgo, r::RLRun)
     plot!(p.plot, [], [], label="Moving Avg")
     Plots.xlabel!(p.plot, "Episode No.")
     Plots.ylabel!(p.plot, "Reward")
+    return nothing
 end
 
 function RL.on_env_terminal_step!(p::PlotInTerminalAlgo, r::RLRun)
@@ -25,9 +26,11 @@ function RL.on_env_terminal_step!(p::PlotInTerminalAlgo, r::RLRun)
         display(p.plot)
         println()
     end
+    return nothing
 end
 
 function RL.on_run_finish!(p::PlotInTerminalAlgo, r::RLRun)
     display(p.plot)
     println()
+    return nothing
 end

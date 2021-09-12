@@ -60,6 +60,7 @@ end
 function Base.empty!(exb::ExperienceBuffer)
     exb.count = 0
     exb.idx = 0
+    return nothing
 end
 
 function get_prev_idx(exb::ExperienceBuffer, idx)
@@ -88,6 +89,7 @@ function propagate_back!(exb::ExperienceBuffer, idx::Integer, steps::Integer)
         exb.dones[idx] = d
         exb.horizons[idx] += 1
     end
+    return nothing
 end
 
 function Base.push!(exb::ExperienceBuffer{S,A}, state::Array{S}, action::A, reward::Real, next_state::Array{S}, done::Bool, info::Dict; cost::Real=0, horizon::Integer=1) where {S,A}
@@ -102,6 +104,7 @@ function Base.push!(exb::ExperienceBuffer{S,A}, state::Array{S}, action::A, rewa
     exb.horizons[exb.idx] = horizon
     exb.count = min(exb.count + 1, exb.capacity)
     propagate_back!(exb, exb.idx, exb.nsteps - 1)
+    return nothing
 end
 
 

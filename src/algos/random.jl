@@ -10,6 +10,7 @@ description(algo::RandomPolicyAlgo) = "Samples actions using `sample_action_spac
 
 function init!(algo::RandomPolicyAlgo, rlrun::RLRun)
     seed_action_space!(rlrun.env, rlrun.seed)
+    return nothing
 end
 
 function act!(algo::RandomPolicyAlgo, rlrun::RLRun)

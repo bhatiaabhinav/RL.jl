@@ -17,48 +17,56 @@ function init!(algo::CompositeRLAlgo, rlrun::RLRun)
     for sub_algo in algo.sub_algos
         init!(sub_algo, rlrun)
     end
+    return nothing
 end
 
 function on_run_start!(algo::CompositeRLAlgo, rlrun::RLRun)
     for sub_algo in algo.sub_algos
         on_run_start!(sub_algo, rlrun)
     end
+    return nothing
 end
 
 function on_env_reset!(algo::CompositeRLAlgo, rlrun::RLRun)
     for sub_algo in algo.sub_algos
         on_env_reset!(sub_algo, rlrun)
     end
+    return nothing
 end
 
 function on_env_step!(algo::CompositeRLAlgo, rlrun::RLRun)
     for sub_algo in algo.sub_algos
         on_env_step!(sub_algo, rlrun)
     end
+    return nothing
 end
 
 function on_env_terminal_step!(algo::CompositeRLAlgo, rlrun::RLRun)
     for sub_algo in algo.sub_algos
         on_env_terminal_step!(sub_algo, rlrun)
     end
+    return nothing
 end
 
 function on_run_break!(algo::CompositeRLAlgo, rlrun::RLRun)
     for sub_algo in algo.sub_algos
         on_run_break!(sub_algo, rlrun)
     end
+    return nothing
 end
 
 function on_env_close!(algo::CompositeRLAlgo, rlrun::RLRun)
     for sub_algo in algo.sub_algos
         on_env_close!(sub_algo, rlrun)
     end
+    return nothing
 end
 
 function on_run_finish!(algo::CompositeRLAlgo, rlrun::RLRun)
     for sub_algo in algo.sub_algos
         on_run_finish!(sub_algo, rlrun)
     end
+    return nothing
 end
 
 function act!(algo::CompositeRLAlgo, rlrun::RLRun)

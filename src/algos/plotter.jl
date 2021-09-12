@@ -22,6 +22,7 @@ function RL.init!(p::PlotterAlgo, r::RLRun)
     plot!(p.plot, [], [], label="Moving Avg")
     Plots.xlabel!(p.plot, "Episode No.")
     Plots.ylabel!(p.plot, "Reward")
+    return nothing
 end
 
 function RL.on_env_terminal_step!(p::PlotterAlgo, r::RLRun)
@@ -30,8 +31,10 @@ function RL.on_env_terminal_step!(p::PlotterAlgo, r::RLRun)
         !p.no_display  &&  display(p.plot)
         Plots.savefig(p.plot, joinpath(r.logdir, "plots", "rpe.png"))
     end
+    return nothing
 end
 
 function RL.on_run_finish!(p::PlotterAlgo, r::RLRun)
     Plots.savefig(p.plot, joinpath(r.logdir, "plots", "rpe.png"))
+    return nothing
 end

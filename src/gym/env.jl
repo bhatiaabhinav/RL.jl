@@ -81,7 +81,11 @@ function render(env::GymEnv; mode::RenderMode=RENDER_MODE_HUMAN)
     end
 end
 
-close!(env::GymEnv) = env.pyenv.close()
+function close!(env::GymEnv)
+    env.pyenv.close()
+    return nothing
+end
+
 seed_action_space!(env::GymEnv, seed) = env.pyenv.action_space.seed(seed)
 sample_action_space!(env::GymDiscreteEnv) = env.pyenv.action_space.sample() + 1
 sample_action_space!(env::GymContinuousEnv) = env.pyenv.action_space.sample()

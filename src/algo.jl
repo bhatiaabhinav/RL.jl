@@ -78,6 +78,7 @@ on_run_finish!(algo::AbstractRLAlgo, rlrun::RLRun) = nothing
 
 function interrupt!(rlrun::RLRun)
     rlrun.interrupted = true
+    return nothing
 end
 
 id(rlrun::RLRun) = rlrun.name
@@ -192,6 +193,7 @@ function run!(r::RLRun)
         flush(r.logger.stream)
         close(r.logger.stream)
     end
+    return r.total_rpe
 end
 
 

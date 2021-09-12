@@ -10,8 +10,10 @@ description(algo::RenderAlgo) = "Invokes `render(env)` on reset and on step."
 
 function on_env_reset!(algo::RenderAlgo, rlrun::RLRun)
     render(rlrun.env)
+    return nothing
 end
 
 function on_env_step!(algo::RenderAlgo, rlrun::RLRun)
     render(rlrun.env)
+    return nothing
 end

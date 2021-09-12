@@ -7,12 +7,13 @@ log_nomal_prob(x, μ, σ) = -0.5 * ((x - μ) / σ)^2 - log(√(2π) * σ)
 function copy_net!(from_net, to_net)
     @debug "copying net"
     Flux.loadparams!(to_net, params(from_net))
+    return nothing
 end
 
 
 function preprocess(obs::Array)
     if typeof(obs) <: Array{UInt8}
-        convert(Array{Float32}, obs) ./ 255
+        return convert(Array{Float32}, obs) ./ 255
     else
         return convert(Array{Float32}, obs)
     end
@@ -34,6 +35,7 @@ function clip_gradients!(grads, clip_by_norm)
             end
         end
     end
+    return nothing
 end
 
 function onehot(s::AbstractVector, n_dims::Int=maximum(s))
@@ -45,6 +47,7 @@ function onehot(s::AbstractVector, n_dims::Int=maximum(s))
 end
 
 function linear_schedule(steps::Integer, over_steps::Integer, start_val::Real, final_val::Real)
+    over_steps == 0 && return final_val
     return clamp(start_val + (final_val - start_val) * steps / over_steps, min(start_val, final_val), max(start_val, final_val))
 end
 
